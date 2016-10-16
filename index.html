@@ -1,0 +1,27 @@
+<script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="./dist/geo-time-series.js"></script>
+
+<script>
+d3.json('./data/taxis.geojson', function(taxiData) {
+
+  var start = Date.now();
+
+  var taxiTimeSeries = new TimeSeries({
+    data: taxiData,
+    dateFormat: 'hour_%H',
+    clustering: {
+      method: 'hcluster',
+      clusters: 4
+    },
+    targetColor: '#1c65db'
+  });
+
+  console.log(taxiTimeSeries.getFeatureMeasurements(5));
+  console.log(taxiTimeSeries.getFeatureMinimum(5));
+  console.log(taxiTimeSeries.getFeatureMaximum(5));
+  console.log(taxiTimeSeries.getChronology());
+
+  console.log('processing time:', (Date.now() - start) / 1000, 'seconds');
+
+});
+</script>

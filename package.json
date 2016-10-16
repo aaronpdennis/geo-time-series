@@ -1,0 +1,32 @@
+{
+  "name": "geo-time-series",
+  "version": "0.0.0",
+  "description": "visualize trends in your geographic time series data with multi-dimensional clustering",
+  "main": "src/index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test/*test.js"
+  },
+  "keywords": [
+    "geojson",
+    "map",
+    "visualization",
+    "d3",
+    "time",
+    "series",
+    "data"
+  ],
+  "author": "Aaron Dennis",
+  "license": "MIT",
+  "devDependencies": {
+    "geojsonhint": "^2.0.0-beta2",
+    "tape": "^4.6.2"
+  },
+  "dependencies": {
+    "clusterfck": "^0.6.0",
+    "d3-time-format": "^2.0.2",
+    "immutable": "^3.8.1"
+  }
+}
