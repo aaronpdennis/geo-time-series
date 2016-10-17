@@ -26,7 +26,11 @@
   },
   "dependencies": {
     "clusterfck": "^0.6.0",
+    "d3-color": "^1.0.1",
+    "d3-scale": "^1.0.3",
     "d3-time-format": "^2.0.2",
-    "immutable": "^3.8.1"
+    "immutable": "^3.8.1",
+    "mathjs": "^3.5.3",
+    "ml-pca": "^1.1.2"
   }
 }

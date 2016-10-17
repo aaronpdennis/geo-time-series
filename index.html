@@ -6,20 +6,21 @@ d3.json('./data/taxis.geojson', function(taxiData) {
 
   var start = Date.now();
 
-  var taxiTimeSeries = new TimeSeries({
+  taxiTimeSeries = new TimeSeries({
     data: taxiData,
     dateFormat: 'hour_%H',
     clustering: {
-      method: 'hcluster',
-      clusters: 4
+      method: 'kmeans',
+      clusters: 10
     },
     targetColor: '#1c65db'
   });
 
-  console.log(taxiTimeSeries.getFeatureMeasurements(5));
-  console.log(taxiTimeSeries.getFeatureMinimum(5));
-  console.log(taxiTimeSeries.getFeatureMaximum(5));
-  console.log(taxiTimeSeries.getChronology());
+  // console.log(taxiTimeSeries.getFeatureMeasurements(5));
+  // console.log(taxiTimeSeries.getFeatureMinimum(5));
+  // console.log(taxiTimeSeries.getFeatureMaximum(5));
+  // console.log(taxiTimeSeries.getChronology());
+  // console.log(taxiTimeSeries.getFeatureCluster(5));
 
   console.log('processing time:', (Date.now() - start) / 1000, 'seconds');
 

@@ -1,6 +1,10 @@
 var Immutable = require('immutable'),
     timeParse = require('d3-time-format').timeParse,
-    clustering = require('./clusterfck/');
+    clustering = require('./clusterfck/'),
+    math = require('mathjs'),
+    PCA = require('ml-pca'),
+    scale = require('d3-scale'),
+    color = require('d3-color');
 
 function GeoTimeSeries (input) {
 
@@ -108,82 +112,157 @@ function GeoTimeSeries (input) {
     return gradients;
   });
 
-  var clusters;
+  // Cluster indexes for every feature
+  var featureClusterAssignments = Immutable.Range(0,features.size).toList();
+
   switch (input.get('clustering').get('method')) {
 
     case 'kmeans':
 
-      clusters = clustering.kmeans(
+      var kmeans = new clustering.Kmeans();
+      var clusters = kmeans.cluster(
         normalizedRatesOfChange.toJS(), // data
         input.get('clustering').get('clusters') //number of clusters
       );
 
-      break;
+      // Multi-dimensional scaling (with PCA) of centroids for later color assignment
+      var centroids = Immutable.fromJS(kmeans.centroids);
+      var projectedCentroids = Immutable.fromJS(new PCA(centroids.toJS()).predict(centroids.toJS()).map(function(d,i) {
+        return d.slice(0,2);
+      }));
 
-    case 'hcluster':
+      var outputClusterCount = clusters.clusters.length;
 
-      var n = input.get('clustering').get('clusters'), splits = 1;
-      while (n > 2) { n = n / 2; splits++; }
-      if (n !== 2) {
-        throw new Error(
-          'When using hierarchical clustering (hcluster), number of clusters (clusters) ' +
-          'must be a power of power of 2 (e.g. 2, 4, 8, 16, ..., 2^n)'
-        )
-      }
+      clusters = Immutable.fromJS(clusters.assignment);
 
-      clusters = clustering.hcluster(
-        normalizedRatesOfChange.toJS() // data
-      );
-
-      // `key` will be the item's feature index
-
-
-      for (var i = 0; i < splits; i++) {
-
-
-      }
-
-      var groups = [];
-      function splitHierarchy(branch) {
-        if (splits > 0) {
-          if (branch.has('left')) {
-            groups.push(branch.get('left'));
-            splitHierarchy(groups[groups.length - 1])
-          }
-          if (branch.has('right')) {
-            groups.push(branch.get('right'));
-          }
-        }
-        splits--;
-      }
-
-      var keys = [];
-      (function extractKeys(object) {
-        if (object.has('left')) { extractKeys(object.get('left')); }
-        if (object.has('right')) { extractKeys(object.get('right')); }
-        else if (object.has('key')) {
-          var featureIndex = object.get('key');
-          if (keys.indexOf(featureIndex) > -1) { console.log('already included', featureIndex);}
-          keys.push(featureIndex);
-        }
-      })(Immutable.fromJS(clusters));
-
-      console.log('number of features:', keys.length);
+      featureClusterAssignments = clusters;
 
       break;
+
+    // ** Possibly implement hierarchical clustering? ** //
+    // case 'hcluster':
+    //
+    //   var n = input.get('clustering').get('clusters'), splits = 1;
+    //   while (n > 2) { n = n / 2; splits++; }
+    //   if (n !== 2) {
+    //     throw new Error(
+    //       'When using hierarchical clustering (hcluster), number of clusters (clusters) ' +
+    //       'must be a power of power of 2 (e.g. 2, 4, 8, 16, ..., 2^n)'
+    //     )
+    //   }
+    //
+    //   heirarchy = clustering.hcluster(
+    //     normalizedRatesOfChange.toJS(), // data
+    //     'manhattan',
+    //     'average'
+    //   );
+    //
+    //   var clusterHeirarchy = Immutable.fromJS([heirarchy]);
+    //
+    //   function splitHierarchy(groups) {
+    //     return groups.reduce(function(r,branch) {
+    //       if (branch.has('left')) { r = r.push(branch.get('left')); }
+    //       if (branch.has('right')) { r = r.push(branch.get('right')); }
+    //       if (!branch.has('left') && !branch.has('right')) { r = r.push(branch); }
+    //       return r;
+    //     }, Immutable.List());
+    //   }
+    //
+    //   while (splits > 0) {
+    //     var clusterHeirarchy = splitHierarchy(clusterHeirarchy);
+    //     splits--;
+    //   }
+    //
+    //   clusterGroups = clusterHeirarchy;
+    //
+    //   var clusterIndexes = [];
+    //   function extractKeys(object) {
+    //     if (object.has('left')) { extractKeys(object.get('left')); }
+    //     if (object.has('right')) { extractKeys(object.get('right')); }
+    //     else if (object.has('key')) {
+    //       var featureIndex = object.get('key');
+    //       clusterIndexes.push(featureIndex);
+    //     }
+    //   };
+    //
+    //   var clusters = clusterGroups.map(function(d) {
+    //     clusterIndexes = [];
+    //     extractKeys(d);
+    //     return clusterIndexes;
+    //   });
+    //
+    //   outputClusterCount = clusters.length;
+    //
+    //   clusters.map(function(c,i) {
+    //     c.map(function(d) {
+    //       featureClusterAssignments = featureClusterAssignments.set(d,i);
+    //     });
+    //   });
+    //
+    //   break;
 
     default:
       throw new Error('Clustering method ' + input.get('clustering').get('method') + ' is not supported.');
   }
 
+  // Initialize empty cluster matrices
+  var clusterMatrices = Immutable.Range(0, outputClusterCount).toJS()
+    .map(function() {
+      return Immutable.Range(0,timeGaps.size).toJS()
+        .map(function() {
+          return [];
+        });
+    });
 
-  console.log(clusters);
+  featureClusterAssignments.map(function(d,i) {
+    timeGaps.map(function(n,t) {
+      clusterMatrices[d][t].push(normalizedRatesOfChange.get(i).get(t));
+    });
+  });
 
-  // Feature indexes grouped by cluster.
-  var featureClusters = [];
+  var sortedClusterMatrices = clusterMatrices.map(function(cluster) {
+    return cluster.map(function(d) {
+      return math.sort(d);
+    });
+  });
 
-  // Averaged rates of change by cluster.
-  var meanRatesOfChangeByCluster = [];
+  // Summary statistics for rates of change by cluster.
+  // * median ratio values per cluster
+  // * upper bound (80%) ratio values per cluster
+  // * lower bound (80%) ratio values per cluster
+  // * max upper bound ratio value
+  // * min lower bound ratio value
+  var boundGlobalMax = 0,
+      boundGlobalMin = 0;
+
+  clusterSummaries = Immutable.fromJS(clusterMatrices.map(function(cluster) {
+    return {
+      median: cluster.map(function(d) {
+        return math.median(d);
+      }),
+      upperBound: cluster.map(function(d) {
+        var value = d[math.ceil(d.length * 0.75 - 1)];
+        if (value > boundGlobalMax) { boundGlobalMax = value };
+        return value;
+      }),
+      lowerBound: cluster.map(function(d) {
+        var value = d[math.floor(d.length * 0.25 - 1)];
+        if (value < boundGlobalMin) { boundGlobalMin = value };
+        return value;
+      })
+    }
+  }));
+
+  // The farthest distance a 50% band is from zero
+  var chartYRange = math.abs(boundGlobalMin) > math.abs(boundGlobalMax) ?
+                    math.abs(boundGlobalMin) : math.abs(boundGlobalMax);
+
+  var first = d3.hcl(input.get('targetColor'));
+  first.h += 20;
+  first.c += 0;
+  first.l += 0;
+  console.log(first);
+  document.body.style.backgroundColor = first + "";
 
   // Colors assigned to clusters.
   var clusterColors = [];
@@ -206,8 +285,8 @@ function GeoTimeSeries (input) {
   this.getFeatureMinimum = function(index) { return measurements.get('minimums').get(index) };
   this.getFeatureMaximum = function(index) { return measurements.get('maximums').get(index) };
 
-  // Access lists of feature indexes grouped by cluster
-  this.getClusters = function() { return clusters.toJS() };
+  // Access cluster classification of feature
+  this.getFeatureCluster = function(index) { return featureClusterAssignments.get(index) };
 
 }
 
