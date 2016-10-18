@@ -1,4 +1,5 @@
 <script src="https://d3js.org/d3.v4.min.js"></script>
+<script src="https://d3js.org/d3-geo.v1.min.js"></script>
 <script src="./dist/geo-time-series.js"></script>
 
 <script>
@@ -9,11 +10,7 @@ d3.json('./data/taxis.geojson', function(taxiData) {
   taxiTimeSeries = new TimeSeries({
     data: taxiData,
     dateFormat: 'hour_%H',
-    clustering: {
-      method: 'kmeans',
-      clusters: 10
-    },
-    targetColor: '#1c65db'
+    clusters: 4
   });
 
   // console.log(taxiTimeSeries.getFeatureMeasurements(5));
@@ -22,7 +19,65 @@ d3.json('./data/taxis.geojson', function(taxiData) {
   // console.log(taxiTimeSeries.getChronology());
   // console.log(taxiTimeSeries.getFeatureCluster(5));
 
-  console.log('processing time:', (Date.now() - start) / 1000, 'seconds');
+  taxiTimeSeries.constructLegend('legend');
+
+  d3.json('./data/nyc_water.geojson', function(contextData) {
+
+    var geojson = taxiTimeSeries.getGeoJSON();
+
+    // Render a map
+    var mapContainer = d3.select('#map');
+
+    var width = parseInt(mapContainer.style('width')),
+        height = parseInt(mapContainer.style('height'));
+
+    var nycProjection = d3.geoAlbers()
+  	      .rotate([73.9, -40.75])
+  	      .center([0, 0])
+          .scale(150000)
+          .translate([width / 2, height / 2]);
+
+    var svg = mapContainer.append("svg")
+      .attr("width", width)
+      .attr("height", height);
+
+    // now you can create new path function with
+    // correctly centered projection
+    var path = d3.geoPath().projection(nycProjection);
+
+    svg.append('g').append('rect')
+      .attr('height', height)
+      .attr('width', width)
+      .attr('fill', '#ddd');
+
+    svg.append('g').selectAll("path")
+      .data(contextData.features)
+      .enter()
+      .append("path")
+      .attr("d", path)
+      .attr("fill", '#eff8ff');
+
+    svg.append('g').selectAll("path")
+      .data(geojson.features)
+      .enter()
+      .append("path")
+      .attr("d", path)
+      .attr("fill", function(d) {
+        return d.color;
+      })
+      .attr('stroke', '#fff')
+      .attr('stroke-width', 0.5)
+      .attr('opacity', 0.8);
+
+    console.log('processing time:', (Date.now() - start) / 1000, 'seconds');
+
+  });
+
 
 });
 </script>
+
+<body style="background-color:#fff;width:1280;height:800;border:solid;">
+  <div id='map' style="width:700;height:700;margin:50;float:right;"></div>
+  <div id='legend' style="width:150;height:700;display:flex;flex-direction:column;justify-content:space-around;margin:50;float:right;"></div>
+</body>

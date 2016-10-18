@@ -4,7 +4,9 @@ var Immutable = require('immutable'),
     math = require('mathjs'),
     PCA = require('ml-pca'),
     scale = require('d3-scale'),
-    color = require('d3-color');
+    color = require('d3-color'),
+    shape = require('d3-shape'),
+    select = require('d3-selection');
 
 function GeoTimeSeries (input) {
 
@@ -74,6 +76,10 @@ function GeoTimeSeries (input) {
   });
 
   measurements = Immutable.fromJS(measurements);
+  var relativeMeasurements = measurements.get('features').map(function(d) {
+    var mean = math.mean(d.toJS());
+    return d.map(function(v) { return v / mean });
+  });
 
   // Create a list of moments as JavaScript Date objects
   var chronology = Immutable.fromJS(moments.map(function(d) {
@@ -109,20 +115,24 @@ function GeoTimeSeries (input) {
       } else { return r; }
     }, Immutable.List());
 
-    return gradients;
+    var standardDeviation = math.std(gradients.toJS());
+    var standardizedGradients = gradients.map(function(d) {
+      return d / standardDeviation;
+    })
+
+    return standardizedGradients;
   });
 
   // Cluster indexes for every feature
   var featureClusterAssignments = Immutable.Range(0,features.size).toList();
 
-  switch (input.get('clustering').get('method')) {
-
-    case 'kmeans':
+  //switch (input.get('clustering').get('method')) {
+    //case 'kmeans':
 
       var kmeans = new clustering.Kmeans();
       var clusters = kmeans.cluster(
         normalizedRatesOfChange.toJS(), // data
-        input.get('clustering').get('clusters') //number of clusters
+        input.get('clusters') //number of clusters
       );
 
       // Multi-dimensional scaling (with PCA) of centroids for later color assignment
@@ -137,7 +147,7 @@ function GeoTimeSeries (input) {
 
       featureClusterAssignments = clusters;
 
-      break;
+      //break;
 
     // ** Possibly implement hierarchical clustering? ** //
     // case 'hcluster':
@@ -201,12 +211,12 @@ function GeoTimeSeries (input) {
     //
     //   break;
 
-    default:
-      throw new Error('Clustering method ' + input.get('clustering').get('method') + ' is not supported.');
-  }
+  //   default:
+  //     throw new Error('Clustering method ' + input.get('clustering').get('method') + ' is not supported.');
+  // }
 
   // Initialize empty cluster matrices
-  var clusterMatrices = Immutable.Range(0, outputClusterCount).toJS()
+  var clusterMatrices = Immutable.Range(0,input.get('clusters')).toJS()
     .map(function() {
       return Immutable.Range(0,timeGaps.size).toJS()
         .map(function() {
@@ -216,7 +226,8 @@ function GeoTimeSeries (input) {
 
   featureClusterAssignments.map(function(d,i) {
     timeGaps.map(function(n,t) {
-      clusterMatrices[d][t].push(normalizedRatesOfChange.get(i).get(t));
+      var featureData = relativeMeasurements.get(i).get(t);
+      clusterMatrices[d][t].push(featureData);
     });
   });
 
@@ -232,8 +243,7 @@ function GeoTimeSeries (input) {
   // * lower bound (80%) ratio values per cluster
   // * max upper bound ratio value
   // * min lower bound ratio value
-  var boundGlobalMax = 0,
-      boundGlobalMin = 0;
+  var boundGlobalMax = 0; // boundGlobalMin would equal 0
 
   clusterSummaries = Immutable.fromJS(clusterMatrices.map(function(cluster) {
     return {
@@ -241,38 +251,66 @@ function GeoTimeSeries (input) {
         return math.median(d);
       }),
       upperBound: cluster.map(function(d) {
-        var value = d[math.ceil(d.length * 0.75 - 1)];
+        var value = d[math.ceil(d.length * 0.80 - 1)];
         if (value > boundGlobalMax) { boundGlobalMax = value };
         return value;
       }),
       lowerBound: cluster.map(function(d) {
-        var value = d[math.floor(d.length * 0.25 - 1)];
-        if (value < boundGlobalMin) { boundGlobalMin = value };
+        var value = d[math.floor(d.length * 0.20 - 1)];
         return value;
       })
     }
   }));
 
   // The farthest distance a 50% band is from zero
-  var chartYRange = math.abs(boundGlobalMin) > math.abs(boundGlobalMax) ?
-                    math.abs(boundGlobalMin) : math.abs(boundGlobalMax);
+  var chartYRange = boundGlobalMax;
 
-  var first = d3.hcl(input.get('targetColor'));
-  first.h += 20;
-  first.c += 0;
-  first.l += 0;
-  console.log(first);
-  document.body.style.backgroundColor = first + "";
+  var centroidVectors = projectedCentroids.map(function(d) {
+    var point = d.toJS();
+    var vector = Immutable.fromJS({
+      displacement: math.distance([0,0], point),
+      angle: math.atan2(point[1],point[0])
+    });
+    return vector;
+  });
+
+  var maxVectorDisplacement = centroidVectors.reduce(function(r,d) {
+    return r = r > d.get('displacement') ? r : d.get('displacement');
+  }, 0);
+
+  // Scale centroid vectors
+  centroidVectors = centroidVectors.map(function(d) {
+    d = d.set('displacement', d.get('displacement') / maxVectorDisplacement * 100);
+    d = d.set('angle', d.get('angle') / (2 * Math.PI) * 360);
+    return d;
+  });
 
   // Colors assigned to clusters.
-  var clusterColors = [];
+  var clusterColors = centroidVectors.map(function(d) {
+    return color.hcl(d.get('angle'), d.get('displacement'), 50) + "";
+  });
 
   // Residual error from cluster mean for every feature.
-  var residualError = {
-    maximum: 0,
-    minimum: 0,
-    features: []
-  }
+
+  geojsonData = geojsonData.update('features', function(fc) {
+    return fc.map(function(feature,index) {
+      var clusterIndex = featureClusterAssignments.get(index);
+
+      feature = feature.set('cluster', clusterIndex);
+      feature = feature.set('color', clusterColors.get(clusterIndex));
+
+      var clusterValues = clusterSummaries.get(clusterIndex).get('median');
+      var featureValues = relativeMeasurements.get(index);
+
+      var residualError = clusterValues.reduce(function(r,d,i) {
+        return r += math.abs(d - featureValues.get(i));
+      }, 0);
+
+      feature = feature.set('residual_error', residualError);
+
+      return feature;
+    });
+  })
 
   // Output GeoJSON
   this.getGeoJSON = function() { return geojsonData.toJS() };
@@ -287,6 +325,109 @@ function GeoTimeSeries (input) {
 
   // Access cluster classification of feature
   this.getFeatureCluster = function(index) { return featureClusterAssignments.get(index) };
+
+  // Access color assigned to cluster
+  this.getClusterColor = function(index) { return clusterColors.get(index) };
+
+  // Function to draw legend
+  this.constructLegend = function(elementID) {
+    // select the element where we will put the legend
+    var legendElement = document.getElementById(elementID);
+
+    var margin = { top: 3, right: 3, bottom: 3, left: 3 };
+
+    // get width and height of div
+    var width = legendElement.offsetWidth - margin.left - margin.right,
+        height = legendElement.offsetHeight - margin.top - margin.bottom;
+
+    // get the greater of width or height
+    var plotSize = width <= height ?
+        width :
+        height;
+
+
+    var legend = select.select('#' + elementID);
+    legend.selectAll('svg').remove();
+
+    var charts = [];
+    for (var i = 0; i < input.get('clusters'); i++) {
+      charts.push(
+        legend.append('svg')
+          .attr('id', (i).toString())
+          .attr('width', plotSize)
+          .attr('height', plotSize)
+      );
+    }
+
+    var yScale = scale.scaleLinear().domain([0, chartYRange]).range([plotSize, 0]),
+        xScale = scale.scaleLinear().domain([0, timeGaps.size - 1]).range([0, plotSize]);
+
+    charts.map(function(plot, c) {
+
+      var summary = clusterSummaries.get(c);
+
+      var area = shape.area()
+        .x(function(d,i) {
+          return xScale(i);
+        })
+        .y0(function(d,i) {
+          var bound = summary.get('lowerBound').get(i);
+          if (bound === undefined) { bound = summary.get('median').get(i) }
+          return yScale(bound);
+        })
+        .y1(function(d,i) {
+          var bound = summary.get('upperBound').get(i);
+          if (bound === undefined) { bound = summary.get('median').get(i) }
+          return yScale(bound);
+        })
+        .curve(d3.curveMonotoneX);
+
+      var line = shape.line()
+        .x(function(d,i) {
+          return xScale(i);
+        })
+        .y(function(d,i) {
+          var median = summary.get('median').get(i);
+          return yScale(median);
+        })
+        .curve(d3.curveMonotoneX);
+
+      var axis = shape.line()
+        .x(function(d,i) {
+          return xScale(i);
+        })
+        .y(yScale(1));
+
+
+      plot.append('rect')
+        .attr('height', plotSize)
+        .attr('width', plotSize)
+        .style('fill', clusterColors.get(c))
+        .style('opacity', 0.1);
+
+      plot.append('path')
+        .datum(timeGaps.toJS())
+        .attr('stroke', '#fff')
+        .attr('stroke-width', plotSize * 0.015)
+        .attr('opacity', 0.6)
+        .attr('d', axis)
+        .attr('fill', 'none');
+
+      plot.append('path')
+        .datum(timeGaps.toJS())
+        .attr('fill-opacity', 0.2)
+        .attr('d', area)
+        .attr('fill', clusterColors.get(c));
+
+      plot.append('path')
+        .datum(timeGaps.toJS())
+        .attr('stroke-width', plotSize * 0.015)
+        .attr('stroke', clusterColors.get(c))
+        .attr('fill', 'none')
+        .attr('d', line);
+
+    })
+  }
 
 }
 
