@@ -101,8 +101,6 @@ function GeoTimeSeries (input) {
   // A set of normalized rates of change between moments for every feature
   var normalizedRatesOfChange = measurements.get('features').map(function(f,i) {
 
-    // normalize based on standard deviations???
-
     var gradients = f.reduce(function(r,d,m) {
       if (m + 1 < f.size) {
 
@@ -118,102 +116,39 @@ function GeoTimeSeries (input) {
     var standardDeviation = math.std(gradients.toJS());
     var standardizedGradients = gradients.map(function(d) {
       return d / standardDeviation;
-    })
+    });
 
     return standardizedGradients;
   });
 
   // Cluster indexes for every feature
-  var featureClusterAssignments = Immutable.Range(0,features.size).toList();
+  if (input.get('preclustered') === true) {
+    var featureClusterAssignments = features.map(function(feature) {
+      return feature.get('cluster');
+    });
+  } else {
 
-  //switch (input.get('clustering').get('method')) {
-    //case 'kmeans':
+    var featureClusterAssignments = Immutable.Range(0,features.size).toList();
 
-      var kmeans = new clustering.Kmeans();
-      var clusters = kmeans.cluster(
-        normalizedRatesOfChange.toJS(), // data
-        input.get('clusters') //number of clusters
-      );
+    var kmeans = new clustering.Kmeans();
+    var clusters = kmeans.cluster(
+      normalizedRatesOfChange.toJS(), // data
+      input.get('clusters') //number of clusters
+    );
 
-      // Multi-dimensional scaling (with PCA) of centroids for later color assignment
-      var centroids = Immutable.fromJS(kmeans.centroids);
-      var projectedCentroids = Immutable.fromJS(new PCA(centroids.toJS()).predict(centroids.toJS()).map(function(d,i) {
-        return d.slice(0,2);
-      }));
+    // Multi-dimensional scaling (with PCA) of centroids for later color assignment
+    var centroids = Immutable.fromJS(kmeans.centroids);
+    var projectedCentroids = Immutable.fromJS(new PCA(centroids.toJS()).predict(centroids.toJS()).map(function(d,i) {
+      return d.slice(0,2);
+    }));
 
-      var outputClusterCount = clusters.clusters.length;
+    var outputClusterCount = clusters.clusters.length;
 
-      clusters = Immutable.fromJS(clusters.assignment);
+    clusters = Immutable.fromJS(clusters.assignment);
 
-      featureClusterAssignments = clusters;
+    featureClusterAssignments = clusters;
 
-      //break;
-
-    // ** Possibly implement hierarchical clustering? ** //
-    // case 'hcluster':
-    //
-    //   var n = input.get('clustering').get('clusters'), splits = 1;
-    //   while (n > 2) { n = n / 2; splits++; }
-    //   if (n !== 2) {
-    //     throw new Error(
-    //       'When using hierarchical clustering (hcluster), number of clusters (clusters) ' +
-    //       'must be a power of power of 2 (e.g. 2, 4, 8, 16, ..., 2^n)'
-    //     )
-    //   }
-    //
-    //   heirarchy = clustering.hcluster(
-    //     normalizedRatesOfChange.toJS(), // data
-    //     'manhattan',
-    //     'average'
-    //   );
-    //
-    //   var clusterHeirarchy = Immutable.fromJS([heirarchy]);
-    //
-    //   function splitHierarchy(groups) {
-    //     return groups.reduce(function(r,branch) {
-    //       if (branch.has('left')) { r = r.push(branch.get('left')); }
-    //       if (branch.has('right')) { r = r.push(branch.get('right')); }
-    //       if (!branch.has('left') && !branch.has('right')) { r = r.push(branch); }
-    //       return r;
-    //     }, Immutable.List());
-    //   }
-    //
-    //   while (splits > 0) {
-    //     var clusterHeirarchy = splitHierarchy(clusterHeirarchy);
-    //     splits--;
-    //   }
-    //
-    //   clusterGroups = clusterHeirarchy;
-    //
-    //   var clusterIndexes = [];
-    //   function extractKeys(object) {
-    //     if (object.has('left')) { extractKeys(object.get('left')); }
-    //     if (object.has('right')) { extractKeys(object.get('right')); }
-    //     else if (object.has('key')) {
-    //       var featureIndex = object.get('key');
-    //       clusterIndexes.push(featureIndex);
-    //     }
-    //   };
-    //
-    //   var clusters = clusterGroups.map(function(d) {
-    //     clusterIndexes = [];
-    //     extractKeys(d);
-    //     return clusterIndexes;
-    //   });
-    //
-    //   outputClusterCount = clusters.length;
-    //
-    //   clusters.map(function(c,i) {
-    //     c.map(function(d) {
-    //       featureClusterAssignments = featureClusterAssignments.set(d,i);
-    //     });
-    //   });
-    //
-    //   break;
-
-  //   default:
-  //     throw new Error('Clustering method ' + input.get('clustering').get('method') + ' is not supported.');
-  // }
+  }
 
   // Initialize empty cluster matrices
   var clusterMatrices = Immutable.Range(0,input.get('clusters')).toJS()
@@ -237,13 +172,7 @@ function GeoTimeSeries (input) {
     });
   });
 
-  // Summary statistics for rates of change by cluster.
-  // * median ratio values per cluster
-  // * upper bound (80%) ratio values per cluster
-  // * lower bound (80%) ratio values per cluster
-  // * max upper bound ratio value
-  // * min lower bound ratio value
-  var boundGlobalMax = 0; // boundGlobalMin would equal 0
+  var boundGlobalMax = 0;
 
   clusterSummaries = Immutable.fromJS(clusterMatrices.map(function(cluster) {
     return {
@@ -265,52 +194,90 @@ function GeoTimeSeries (input) {
   // The farthest distance a 50% band is from zero
   var chartYRange = boundGlobalMax;
 
-  var centroidVectors = projectedCentroids.map(function(d) {
-    var point = d.toJS();
-    var vector = Immutable.fromJS({
-      displacement: math.distance([0,0], point),
-      angle: math.atan2(point[1],point[0])
+  if (input.get('preclustered') === true) {
+
+    var clusterColors = Immutable.Range(0,input.get('clusters')).toList();
+
+    features.map(function(feature) {
+      clusterColors = clusterColors.set(feature.get('cluster'), feature.get('color'));
     });
-    return vector;
-  });
 
-  var maxVectorDisplacement = centroidVectors.reduce(function(r,d) {
-    return r = r > d.get('displacement') ? r : d.get('displacement');
-  }, 0);
+  } else {
 
-  // Scale centroid vectors
-  centroidVectors = centroidVectors.map(function(d) {
-    d = d.set('displacement', d.get('displacement') / maxVectorDisplacement * 100);
-    d = d.set('angle', d.get('angle') / (2 * Math.PI) * 360);
-    return d;
-  });
-
-  // Colors assigned to clusters.
-  var clusterColors = centroidVectors.map(function(d) {
-    return color.hcl(d.get('angle'), d.get('displacement'), 50) + "";
-  });
-
-  // Residual error from cluster mean for every feature.
-
-  geojsonData = geojsonData.update('features', function(fc) {
-    return fc.map(function(feature,index) {
-      var clusterIndex = featureClusterAssignments.get(index);
-
-      feature = feature.set('cluster', clusterIndex);
-      feature = feature.set('color', clusterColors.get(clusterIndex));
-
-      var clusterValues = clusterSummaries.get(clusterIndex).get('median');
-      var featureValues = relativeMeasurements.get(index);
-
-      var residualError = clusterValues.reduce(function(r,d,i) {
-        return r += math.abs(d - featureValues.get(i));
-      }, 0);
-
-      feature = feature.set('residual_error', residualError);
-
-      return feature;
+    var centroidVectors = projectedCentroids.map(function(d) {
+      var point = d.toJS();
+      var vector = Immutable.fromJS({
+        displacement: math.distance([0,0], point),
+        angle: math.atan2(point[1],point[0])
+      });
+      return vector;
     });
-  })
+
+    var maxVectorDisplacement = centroidVectors.reduce(function(r,d) {
+      return r = r > d.get('displacement') ? r : d.get('displacement');
+    }, 0);
+
+    // Scale centroid vectors
+    centroidVectors = centroidVectors.map(function(d) {
+      d = d.set('displacement', d.get('displacement') / maxVectorDisplacement * 100);
+      d = d.set('angle', d.get('angle') / (2 * Math.PI) * 360);
+      return d;
+    });
+
+    // Colors assigned to clusters.
+    var clusterColors = centroidVectors.map(function(d) {
+      return color.hcl(d.get('angle'), d.get('displacement'), 50) + "";
+    });
+
+    // Residual error from cluster mean for every feature.
+
+    var residualErrors = Immutable.Range(0,input.get('clusters'))
+                                  .toList().map(function(d) { return Immutable.List(); });
+
+    geojsonData = geojsonData.update('features', function(fc) {
+      return fc.map(function(feature,index) {
+        var clusterIndex = featureClusterAssignments.get(index);
+
+        feature = feature.set('cluster', clusterIndex);
+        feature = feature.set('color', clusterColors.get(clusterIndex));
+
+        var clusterValues = clusterSummaries.get(clusterIndex).get('median');
+        var featureValues = relativeMeasurements.get(index);
+
+        var residualError = clusterValues.reduce(function(r,d,i) {
+          return r += math.abs(d - featureValues.get(i));
+        }, 0);
+
+        feature = feature.set('residual_error', residualError);
+        residualErrors = residualErrors.update(clusterIndex, function(d) { return d.push(residualError); });
+
+        return feature;
+      });
+    });
+
+    residualErrorSummaries = residualErrors.map(function(d) {
+      var sorted = d.sort();
+      return Immutable.Map({
+        max: sorted.get(-1),
+        min: sorted.get(0),
+        sd: math.std(sorted.toJS())
+      });
+    });
+
+    geojsonData = geojsonData.update('features', function(fc) {
+      return fc.map(function(feature, index) {
+        var clusterIndex = feature.get('cluster');
+        return feature.update('residual_error', function(re) {
+          var sd = residualErrorSummaries.get(clusterIndex).get('sd'),
+              re = re / sd,
+              max = residualErrorSummaries.get(clusterIndex).get('max') / sd,
+              min = residualErrorSummaries.get(clusterIndex).get('min') / sd;
+          var scaled = math.pow(1 - ((re - min) / (max - min)), 2);
+          return scaled;
+        })
+      });
+    });
+  }
 
   // Output GeoJSON
   this.getGeoJSON = function() { return geojsonData.toJS() };
@@ -324,31 +291,33 @@ function GeoTimeSeries (input) {
   this.getFeatureMaximum = function(index) { return measurements.get('maximums').get(index) };
 
   // Access cluster classification of feature
-  this.getFeatureCluster = function(index) { return featureClusterAssignments.get(index) };
-
-  // Access color assigned to cluster
-  this.getClusterColor = function(index) { return clusterColors.get(index) };
+  // this.getFeatureCluster = function(index) { return featureClusterAssignments.get(index) };
+  //
+  // // Access color assigned to cluster
+  // this.getClusterColor = function(index) { return clusterColors.get(index) };
 
   // Function to draw legend
   this.constructLegend = function(elementID) {
-    // select the element where we will put the legend
+
+    // Select the element where we will put the legend
     var legendElement = document.getElementById(elementID);
 
-    var margin = { top: 3, right: 3, bottom: 3, left: 3 };
+    // Get width and height of legend element
+    var width = legendElement.offsetWidth,
+        height = legendElement.offsetHeight;
 
-    // get width and height of div
-    var width = legendElement.offsetWidth - margin.left - margin.right,
-        height = legendElement.offsetHeight - margin.top - margin.bottom;
+    var margin = '0.2em';
 
-    // get the greater of width or height
-    var plotSize = width <= height ?
+    // Get the greater of width or height
+    var plotSize = (width >= height ?
         width :
-        height;
+        height / input.get('clusters')) * 0.9;
 
-
+    // D3 select legend element
     var legend = select.select('#' + elementID);
     legend.selectAll('svg').remove();
 
+    // Setup an SVG legend chart for each cluster
     var charts = [];
     for (var i = 0; i < input.get('clusters'); i++) {
       charts.push(
@@ -356,15 +325,26 @@ function GeoTimeSeries (input) {
           .attr('id', (i).toString())
           .attr('width', plotSize)
           .attr('height', plotSize)
+          .style('margin', margin)
+          .attr('class', 'legendChart')
       );
     }
 
+    // Create scales for legend charts
     var yScale = scale.scaleLinear().domain([0, chartYRange]).range([plotSize, 0]),
         xScale = scale.scaleLinear().domain([0, timeGaps.size - 1]).range([0, plotSize]);
 
-    charts.map(function(plot, c) {
+    var sortedClusterSummaries = clusterSummaries.map(function(d,i) {
+      // add color to cluster summary information
+      return d.set('color', clusterColors.get(i));
+    }).sort(function(a,b) {
+      // sorting by 'hue' in HCL color space
+      return color.hcl(b.get('color')).h - color.hcl(a.get('color')).h;
+    });
 
-      var summary = clusterSummaries.get(c);
+    // Generate legend charts
+    charts.map(function(plot, c) {
+      var summary = sortedClusterSummaries.get(c);
 
       var area = shape.area()
         .x(function(d,i) {
@@ -398,31 +378,41 @@ function GeoTimeSeries (input) {
         })
         .y(yScale(1));
 
-
+      // Background
+      var background = '#eee';
       plot.append('rect')
         .attr('height', plotSize)
         .attr('width', plotSize)
-        .style('fill', clusterColors.get(c))
+        .style('fill', background);
+
+      // Cluster color background
+      plot.append('rect')
+        .attr('height', plotSize)
+        .attr('width', plotSize)
+        .style('fill', summary.get('color'))
         .style('opacity', 0.1);
 
+      // Mean axis
       plot.append('path')
         .datum(timeGaps.toJS())
         .attr('stroke', '#fff')
         .attr('stroke-width', plotSize * 0.015)
-        .attr('opacity', 0.6)
+        .attr('opacity', 0.5)
         .attr('d', axis)
         .attr('fill', 'none');
 
+      // Band representing 50% of clusters
       plot.append('path')
         .datum(timeGaps.toJS())
-        .attr('fill-opacity', 0.2)
+        .attr('fill-opacity', 0.5)
         .attr('d', area)
-        .attr('fill', clusterColors.get(c));
+        .attr('fill', summary.get('color'));
 
+      // Median line
       plot.append('path')
         .datum(timeGaps.toJS())
         .attr('stroke-width', plotSize * 0.015)
-        .attr('stroke', clusterColors.get(c))
+        .attr('stroke', summary.get('color'))
         .attr('fill', 'none')
         .attr('d', line);
 

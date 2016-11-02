@@ -1,29 +1,127 @@
-<script src="https://d3js.org/d3.v4.min.js"></script>
-<script src="https://d3js.org/d3-geo.v1.min.js"></script>
+<script src="./d3.v4.min.js"></script>
+<script src="./d3-geo.v1.min.js"></script>
 <script src="./dist/geo-time-series.js"></script>
 
+<body>
+  <div id='page'>
+    <h1>Major Hourly Trends in New York City Taxi Dropoffs</h1>
+    <h2>midnight to midnight</h2>
+    <div id='container'>
+      <div id='legend'></div>
+      <div id='map'></div>
+    </div>
+    <h3>via multi-dimensional clustering</h3>
+    <p>checkout <a href='https://github.com/aaronpdennis/geo-time-series'><span id='github-link'>geo-time-series</span></a> on GitHub</p>
+  </div>
+</body>
+
+<style>
+
+#page {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+body {
+  font-family: Garamond, Georgia, serif;
+  color: #555;
+}
+
+h1 {
+  font-size: 2em;
+  margin: 0;
+}
+
+h2 {
+  font-size: 1.5em;
+  font-style: italic;
+  color: #aaa;
+  font-weight: lighter;
+  margin: 0;
+}
+
+h3 {
+  font-size: 1em;
+  font-weight: normal;
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+
+#container {
+  margin: auto;
+  width: 70%;
+  height: 80%;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+#map {
+  width: 85%;
+  height: 100%;
+}
+
+#legend {
+  padding-right: 0.4em;
+  width: 15%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+#github-link {
+  font-style: monospace;
+}
+
+</style>
+
 <script>
-d3.json('./data/taxis.geojson', function(taxiData) {
 
-  var start = Date.now();
+var parameters = {
+  file: './data/taxis.geojson',
+  dateFormat: 'hour_%H',
+  clusters: 5,
+  mapContext: './data/nyc_water.geojson',
+  projection: d3.geoAlbers()
+        .rotate([73.9, -40.75])
+        .center([0, 0])
+        .scale(135000),
+  contextFile: './data/nyc_water.geojson'
+}
 
-  taxiTimeSeries = new TimeSeries({
-    data: taxiData,
-    dateFormat: 'hour_%H',
-    clusters: 4
-  });
+d3.json(parameters.file, function(data) {
 
-  // console.log(taxiTimeSeries.getFeatureMeasurements(5));
-  // console.log(taxiTimeSeries.getFeatureMinimum(5));
-  // console.log(taxiTimeSeries.getFeatureMaximum(5));
-  // console.log(taxiTimeSeries.getChronology());
-  // console.log(taxiTimeSeries.getFeatureCluster(5));
+  d3.json(parameters.contextFile, function(contextData) {
 
-  taxiTimeSeries.constructLegend('legend');
 
-  d3.json('./data/nyc_water.geojson', function(contextData) {
+    timeSeries = new TimeSeries({
+      data: data,
+      dateFormat: parameters.dateFormat,
+      clusters: parameters.clusters,
+      preclustered: false
+    });
 
-    var geojson = taxiTimeSeries.getGeoJSON();
+    // Legend
+    timeSeries.constructLegend('legend');
+
+    // Clustered features
+    var geojson = timeSeries.getGeoJSON();
+
+    var featureFill = function(d) { return d.color; },
+        featureOpacity = function(d) { return d.residual_error; },
+        mapContext = parameters.mapContext,
+        mapRotation = parameters.mapRotation,
+        mapScale = parameters.mapScale;
 
     // Render a map
     var mapContainer = d3.select('#map');
@@ -31,53 +129,48 @@ d3.json('./data/taxis.geojson', function(taxiData) {
     var width = parseInt(mapContainer.style('width')),
         height = parseInt(mapContainer.style('height'));
 
-    var nycProjection = d3.geoAlbers()
-  	      .rotate([73.9, -40.75])
-  	      .center([0, 0])
-          .scale(150000)
-          .translate([width / 2, height / 2]);
+    // get the greater of width or height
+    var plotSize = width <= height ?
+        width :
+        height;
+
+    plotSize -= plotSize / parameters.clusters;
+
+    var width = parseInt(mapContainer.style('width')),
+        height = parseInt(mapContainer.style('height'));
 
     var svg = mapContainer.append("svg")
       .attr("width", width)
-      .attr("height", height);
+      .attr("height", height)
+      .style('z-index', '-1')
+      .attr('id', 'svg');
 
-    // now you can create new path function with
-    // correctly centered projection
-    var path = d3.geoPath().projection(nycProjection);
+    var path = d3.geoPath().projection(parameters.projection.translate([width / 2, height / 2]));
 
     svg.append('g').append('rect')
       .attr('height', height)
       .attr('width', width)
-      .attr('fill', '#ddd');
+      .attr('fill', '#fff');
 
     svg.append('g').selectAll("path")
       .data(contextData.features)
       .enter()
       .append("path")
       .attr("d", path)
-      .attr("fill", '#eff8ff');
+      .attr('stroke-width', 0)
+      .attr("fill", "#eee");
 
     svg.append('g').selectAll("path")
       .data(geojson.features)
       .enter()
       .append("path")
       .attr("d", path)
-      .attr("fill", function(d) {
-        return d.color;
-      })
       .attr('stroke', '#fff')
       .attr('stroke-width', 0.5)
-      .attr('opacity', 0.8);
-
-    console.log('processing time:', (Date.now() - start) / 1000, 'seconds');
+      .attr("fill", featureFill)
+      .attr('opacity', featureOpacity);
 
   });
-
-
 });
-</script>
 
-<body style="background-color:#fff;width:1280;height:800;border:solid;">
-  <div id='map' style="width:700;height:700;margin:50;float:right;"></div>
-  <div id='legend' style="width:150;height:700;display:flex;flex-direction:column;justify-content:space-around;margin:50;float:right;"></div>
-</body>
+</script>
