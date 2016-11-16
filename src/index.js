@@ -1,6 +1,6 @@
 var Immutable = require('immutable'),
     timeParse = require('d3-time-format').timeParse,
-    clustering = require('./clusterfck/'),
+    clustering = require('./clustering/'),
     math = require('mathjs'),
     PCA = require('ml-pca'),
     scale = require('d3-scale'),
