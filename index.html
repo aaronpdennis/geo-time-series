@@ -91,8 +91,7 @@ d3.json(parameters.file, function(data) {
     timeSeries = new TimeSeries({
       data: data,
       dateFormat: parameters.dateFormat,
-      clusters: parameters.clusters,
-      preclustered: false
+      clusters: parameters.clusters
     });
 
     // Legend
