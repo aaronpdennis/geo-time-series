@@ -24,6 +24,10 @@ var geojson = timeSeries.getGeoJSON();
 
 Date format reference: https://github.com/d3/d3-time-format/blob/master/README.md#locale_format
 
+## Example
+
+See a [live visualization](http://aaronpdennis.github.io/geo-time-series) or adopt the [source code](https://github.com/aaronpdennis/geo-time-series/blob/master/index.html).
+
 ## Developing
 
 With [Browserify](http://browserify.org/):
