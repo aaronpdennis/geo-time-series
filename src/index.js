@@ -1,12 +1,13 @@
 var Immutable = require('immutable'),
-    timeParse = require('d3-time-format').timeParse,
     clustering = require('./clustering/'),
     math = require('mathjs'),
     PCA = require('ml-pca'),
-    scale = require('d3-scale'),
-    color = require('d3-color'),
-    shape = require('d3-shape'),
-    select = require('d3-selection');
+    d3 = Object.assign({},
+      require('d3-time-format'),
+      require('d3-scale'),
+      require('d3-shape'),
+      require('d3-selection')
+    );
 
 function GeoTimeSeries (input) {
 
@@ -18,7 +19,7 @@ function GeoTimeSeries (input) {
   var geojsonData = Immutable.fromJS(input.get('data'));
 
   // Date Parser
-  var dateParse = timeParse(input.get('dateFormat'));
+  var dateParse = d3.timeParse(input.get('dateFormat'));
 
   // Moments (times) of measurement found in all features. Expects every feature to have the same moments of measurements.
   var moments;
@@ -226,7 +227,7 @@ function GeoTimeSeries (input) {
 
     // Colors assigned to clusters.
     var clusterColors = centroidVectors.map(function(d) {
-      return color.hcl(d.get('angle'), d.get('displacement'), 50) + "";
+      return d3.hcl(d.get('angle'), d.get('displacement'), 50) + "";
     });
 
     // Residual error from cluster mean for every feature.
@@ -314,7 +315,7 @@ function GeoTimeSeries (input) {
         height / input.get('clusters')) * 0.9;
 
     // D3 select legend element
-    var legend = select.select('#' + elementID);
+    var legend = d3.select('#' + elementID);
     legend.selectAll('svg').remove();
 
     // Setup an SVG legend chart for each cluster
@@ -331,22 +332,22 @@ function GeoTimeSeries (input) {
     }
 
     // Create scales for legend charts
-    var yScale = scale.scaleLinear().domain([0, chartYRange]).range([plotSize, 0]),
-        xScale = scale.scaleLinear().domain([0, timeGaps.size - 1]).range([0, plotSize]);
+    var yScale = d3.scaleLinear().domain([0, chartYRange]).range([plotSize, 0]),
+        xScale = d3.scaleLinear().domain([0, timeGaps.size - 1]).range([0, plotSize]);
 
     var sortedClusterSummaries = clusterSummaries.map(function(d,i) {
       // add color to cluster summary information
       return d.set('color', clusterColors.get(i));
     }).sort(function(a,b) {
       // sorting by 'hue' in HCL color space
-      return color.hcl(b.get('color')).h - color.hcl(a.get('color')).h;
+      return d3.hcl(b.get('color')).h - d3.hcl(a.get('color')).h;
     });
 
     // Generate legend charts
     charts.map(function(plot, c) {
       var summary = sortedClusterSummaries.get(c);
 
-      var area = shape.area()
+      var area = d3.area()
         .x(function(d,i) {
           return xScale(i);
         })
@@ -362,7 +363,7 @@ function GeoTimeSeries (input) {
         })
         .curve(d3.curveMonotoneX);
 
-      var line = shape.line()
+      var line = d3.line()
         .x(function(d,i) {
           return xScale(i);
         })
@@ -372,7 +373,7 @@ function GeoTimeSeries (input) {
         })
         .curve(d3.curveMonotoneX);
 
-      var axis = shape.line()
+      var axis = d3.line()
         .x(function(d,i) {
           return xScale(i);
         })
