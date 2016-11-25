@@ -6,7 +6,8 @@ var Immutable = require('immutable'),
       require('d3-time-format'),
       require('d3-scale'),
       require('d3-shape'),
-      require('d3-selection')
+      require('d3-selection'),
+      require('d3-color')
     );
 
 function GeoTimeSeries (input) {

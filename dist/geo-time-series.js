@@ -69819,7 +69819,8 @@ var Immutable = require('immutable'),
       require('d3-time-format'),
       require('d3-scale'),
       require('d3-shape'),
-      require('d3-selection')
+      require('d3-selection'),
+      require('d3-color')
     );
 
 function GeoTimeSeries (input) {
@@ -70237,7 +70238,7 @@ function GeoTimeSeries (input) {
 
 module.exports = GeoTimeSeries;
 
-},{"./clustering/":537,"d3-scale":8,"d3-selection":9,"d3-shape":10,"d3-time-format":11,"immutable":15,"mathjs":17,"ml-pca":531}],542:[function(require,module,exports){
+},{"./clustering/":537,"d3-color":4,"d3-scale":8,"d3-selection":9,"d3-shape":10,"d3-time-format":11,"immutable":15,"mathjs":17,"ml-pca":531}],542:[function(require,module,exports){
 if (typeof Object.create === 'function') {
   // implementation from standard node.js 'util' module
   module.exports = function inherits(ctor, superCtor) {
